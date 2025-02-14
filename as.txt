@@ -1,0 +1,854 @@
+Below is an **expanded** and **more detailed** plan for the **frontend (Angular 17)** portion of your blog application, following the installation and configuration of Bootstrap. The goal is to ensure the application is **user‐friendly**, leverages **all backend features** (CRUD, file upload, authentication), and provides a clear structure for developers. 
+
+You can integrate these steps with your existing frontend workflow (Steps 21–30 in your original guide). This outline focuses on turning the baseline Angular + Bootstrap setup into a **functional** CRUD application with **authentication** and **file uploads**.
+
+---
+
+## DETAILED FRONTEND PLAN (Angular 17 + Bootstrap 5)
+
+### 1. (Recap) Generate Your Angular Project & Install Dependencies
+
+> **These steps are likely already complete, but let’s restate them for clarity:**
+
+1. **Install the Angular CLI (if not done):**  
+   ```bash
+   npm install -g @angular/cli
+   ```
+2. **Create a new project:**  
+   ```bash
+   ng new blog-frontend
+   ```
+   - When prompted, choose **Angular routing: Yes** and **CSS** (or your preferred stylesheet format).
+3. **Navigate to your new project folder and install Bootstrap 5:**  
+   ```bash
+   cd blog-frontend
+   npm install bootstrap@5
+   ```
+4. **Configure Bootstrap in `angular.json`:**  
+   ```json
+   "styles": [
+     "node_modules/bootstrap/dist/css/bootstrap.min.css",
+     "src/styles.css"
+   ]
+   ```
+5. **(Optional) Configure a proxy for local development:**  
+   - Create `proxy.conf.json` to route `"/api"` calls to your backend (`http://localhost:3000`).
+   - Update `package.json` or use the CLI flag:
+     ```bash
+     ng serve --proxy-config proxy.conf.json
+     ```
+
+At this point, you can run:
+```bash
+ng serve
+```
+and confirm the default Angular page is accessible at [http://localhost:4200](http://localhost:4200).
+
+---
+
+### 2. Generate Core Components
+
+Let’s create the primary components you’ll need. You already have some of these from your initial plan, but we’ll list them here for clarity:
+
+```bash
+ng generate component components/navbar
+ng generate component components/home
+ng generate component components/post-list
+ng generate component components/post-detail
+ng generate component components/post-form
+ng generate component components/login
+ng generate component components/register
+ng generate component components/not-found
+```
+
+- **Navbar:** Top navigation bar (links to `Home`, `Posts`, `Create Post`, `Login`, etc.).
+- **Home:** Your landing page.
+- **PostList:** Displays a list of all posts fetched from the backend.
+- **PostDetail:** Shows a single post in detail (with optional attachment).
+- **PostForm:** For creating/editing a blog post (includes file upload field).
+- **Login:** Allows users to submit email/password for JWT-based auth (or redirect to Azure if using OAuth).
+- **Register:** Allows new users to sign up.
+- **NotFound:** A generic fallback for any unknown routes (optional but recommended).
+
+**Why a `NotFound` component?**  
+Handling non‐existing routes with a friendly page improves user experience.
+
+---
+
+### 3. Set Up Angular Routing and Navigation
+
+1. **Create or Update `app-routing.module.ts`:**
+
+   ```typescript
+   import { NgModule } from '@angular/core';
+   import { RouterModule, Routes } from '@angular/router';
+   import { HomeComponent } from './components/home/home.component';
+   import { PostListComponent } from './components/post-list/post-list.component';
+   import { PostDetailComponent } from './components/post-detail/post-detail.component';
+   import { PostFormComponent } from './components/post-form/post-form.component';
+   import { LoginComponent } from './components/login/login.component';
+   import { RegisterComponent } from './components/register/register.component';
+   import { NotFoundComponent } from './components/not-found/not-found.component';
+   // (Optional) Import any route guards if you plan on having protected routes
+
+   const routes: Routes = [
+     { path: '', component: HomeComponent },
+     { path: 'posts', component: PostListComponent },
+     { path: 'post/:id', component: PostDetailComponent },
+     { path: 'create', component: PostFormComponent },
+     { path: 'edit/:id', component: PostFormComponent },
+     { path: 'login', component: LoginComponent },
+     { path: 'register', component: RegisterComponent },
+     { path: '**', component: NotFoundComponent }  // Fallback for unknown routes
+   ];
+
+   @NgModule({
+     imports: [RouterModule.forRoot(routes)],
+     exports: [RouterModule]
+   })
+   export class AppRoutingModule { }
+   ```
+
+2. **Include `<router-outlet>` and `<app-navbar>`** in `app.component.html`:
+   ```html
+   <app-navbar></app-navbar>
+   <div class="mt-3">
+     <router-outlet></router-outlet>
+   </div>
+   ```
+
+3. **Navbar links** (in `navbar.component.html`):
+   ```html
+   <nav class="navbar navbar-expand-lg navbar-light bg-light">
+     <div class="container-fluid">
+       <a class="navbar-brand" routerLink="/">BlogApp</a>
+       <button
+         class="navbar-toggler"
+         type="button"
+         data-bs-toggle="collapse"
+         data-bs-target="#navbarNav"
+         aria-controls="navbarNav"
+         aria-expanded="false"
+         aria-label="Toggle navigation"
+       >
+         <span class="navbar-toggler-icon"></span>
+       </button>
+       <div class="collapse navbar-collapse" id="navbarNav">
+         <ul class="navbar-nav">
+           <li class="nav-item">
+             <a class="nav-link" routerLink="/posts">Posts</a>
+           </li>
+           <li class="nav-item">
+             <a class="nav-link" routerLink="/create">Create Post</a>
+           </li>
+           <li class="nav-item">
+             <a class="nav-link" routerLink="/login">Login</a>
+           </li>
+           <li class="nav-item">
+             <a class="nav-link" routerLink="/register">Register</a>
+           </li>
+         </ul>
+       </div>
+     </div>
+   </nav>
+   ```
+
+**Testing:**  
+- Start the Angular app and click around to ensure routes work.  
+- URLs like `"/posts"` and `"/create"` should direct you to the corresponding components.
+
+---
+
+### 4. Set Up HTTP Services (Post & Auth) with Added Features
+
+1. **Post Service**: We’ll refine it to support **file upload** and attach **JWT** if needed.
+
+   ```bash
+   ng generate service services/post
+   ```
+
+   ```typescript
+   // src/app/services/post.service.ts
+   import { Injectable } from '@angular/core';
+   import { HttpClient, HttpHeaders } from '@angular/common/http';
+   import { Observable } from 'rxjs';
+
+   export interface Post {
+     _id?: string;
+     title: string;
+     content: string;
+     attachment?: string;   // Will store the uploaded file path
+     createdAt?: string;
+   }
+
+   @Injectable({
+     providedIn: 'root'
+   })
+   export class PostService {
+     private baseUrl = '/api/posts';
+
+     constructor(private http: HttpClient) {}
+
+     getPosts(): Observable<Post[]> {
+       return this.http.get<Post[]>(this.baseUrl);
+     }
+
+     getPost(id: string): Observable<Post> {
+       return this.http.get<Post>(`${this.baseUrl}/${id}`);
+     }
+
+     createPost(postData: FormData): Observable<Post> {
+       // postData is a FormData object containing { title, content, attachment }
+       return this.http.post<Post>(this.baseUrl, postData);
+     }
+
+     updatePost(id: string, postData: FormData | Partial<Post>): Observable<Post> {
+       return this.http.put<Post>(`${this.baseUrl}/${id}`, postData);
+     }
+
+     deletePost(id: string): Observable<any> {
+       return this.http.delete(`${this.baseUrl}/${id}`);
+     }
+   }
+   ```
+
+   > **Note:** For file uploads, **FormData** is typically used. If your JWT is required on these requests, inject it into headers:
+
+   ```typescript
+   let headers = new HttpHeaders().set('Authorization', 'Bearer ' + this.authService.getToken());
+   // Then pass it into the options: 
+   return this.http.post<Post>(this.baseUrl, postData, { headers });
+   ```
+
+2. **Auth Service**: We’ll ensure the token is **stored** and **retrieved** properly.
+
+   ```bash
+   ng generate service services/auth
+   ```
+
+   ```typescript
+   // src/app/services/auth.service.ts
+   import { Injectable } from '@angular/core';
+   import { HttpClient } from '@angular/common/http';
+   import { Observable } from 'rxjs';
+
+   interface LoginResponse {
+     token: string;
+   }
+
+   @Injectable({
+     providedIn: 'root'
+   })
+   export class AuthService {
+     private baseUrl = '/api/auth';
+
+     constructor(private http: HttpClient) {}
+
+     register(userData: any): Observable<any> {
+       return this.http.post(`${this.baseUrl}/register`, userData);
+     }
+
+     login(credentials: any): Observable<LoginResponse> {
+       return this.http.post<LoginResponse>(`${this.baseUrl}/login`, credentials);
+     }
+
+     // Handle storing/retrieving the JWT in local storage:
+     storeToken(token: string): void {
+       localStorage.setItem('authToken', token);
+     }
+
+     getToken(): string | null {
+       return localStorage.getItem('authToken');
+     }
+
+     logout(): void {
+       localStorage.removeItem('authToken');
+     }
+
+     isLoggedIn(): boolean {
+       return !!this.getToken();
+     }
+   }
+   ```
+
+3. **HttpClient Module**: In `app.module.ts`, ensure `HttpClientModule` is imported:
+
+   ```typescript
+   import { HttpClientModule } from '@angular/common/http';
+
+   @NgModule({
+     declarations: [ /* components */ ],
+     imports: [
+       BrowserModule,
+       HttpClientModule,
+       AppRoutingModule
+     ],
+     bootstrap: [AppComponent]
+   })
+   export class AppModule {}
+   ```
+
+---
+
+### 5. Implement Authentication (Login & Register Components)
+
+1. **Register Component** (`register.component.html` / `.ts`)
+
+   ```html
+   <!-- register.component.html -->
+   <div class="container mt-4">
+     <div class="row">
+       <div class="col-md-6 offset-md-3">
+         <h2>Register</h2>
+         <form (ngSubmit)="onSubmit()" #registerForm="ngForm">
+           <div class="mb-3">
+             <label for="username" class="form-label">Username</label>
+             <input
+               type="text"
+               id="username"
+               class="form-control"
+               required
+               [(ngModel)]="user.username"
+               name="username"
+             />
+           </div>
+           <div class="mb-3">
+             <label for="email" class="form-label">Email</label>
+             <input
+               type="email"
+               id="email"
+               class="form-control"
+               required
+               [(ngModel)]="user.email"
+               name="email"
+             />
+           </div>
+           <div class="mb-3">
+             <label for="password" class="form-label">Password</label>
+             <input
+               type="password"
+               id="password"
+               class="form-control"
+               required
+               [(ngModel)]="user.password"
+               name="password"
+             />
+           </div>
+           <button class="btn btn-primary" type="submit">Register</button>
+         </form>
+       </div>
+     </div>
+   </div>
+   ```
+
+   ```typescript
+   // register.component.ts
+   import { Component } from '@angular/core';
+   import { AuthService } from '../../services/auth.service';
+
+   @Component({
+     selector: 'app-register',
+     templateUrl: './register.component.html'
+   })
+   export class RegisterComponent {
+     user = {
+       username: '',
+       email: '',
+       password: ''
+     };
+
+     constructor(private authService: AuthService) {}
+
+     onSubmit() {
+       this.authService.register(this.user).subscribe({
+         next: (res) => {
+           alert('Registration successful!');
+         },
+         error: (err) => {
+           console.error('Registration error:', err);
+         }
+       });
+     }
+   }
+   ```
+
+2. **Login Component** (`login.component.html` / `.ts`)
+
+   ```html
+   <!-- login.component.html -->
+   <div class="container mt-4">
+     <div class="row">
+       <div class="col-md-6 offset-md-3">
+         <h2>Login</h2>
+         <form (ngSubmit)="onLogin()" #loginForm="ngForm">
+           <div class="mb-3">
+             <label for="email" class="form-label">Email</label>
+             <input
+               type="email"
+               id="email"
+               class="form-control"
+               required
+               [(ngModel)]="credentials.email"
+               name="email"
+             />
+           </div>
+           <div class="mb-3">
+             <label for="password" class="form-label">Password</label>
+             <input
+               type="password"
+               id="password"
+               class="form-control"
+               required
+               [(ngModel)]="credentials.password"
+               name="password"
+             />
+           </div>
+           <button class="btn btn-primary" type="submit">Login</button>
+         </form>
+       </div>
+     </div>
+   </div>
+   ```
+
+   ```typescript
+   // login.component.ts
+   import { Component } from '@angular/core';
+   import { AuthService } from '../../services/auth.service';
+   import { Router } from '@angular/router';
+
+   @Component({
+     selector: 'app-login',
+     templateUrl: './login.component.html'
+   })
+   export class LoginComponent {
+     credentials = {
+       email: '',
+       password: ''
+     };
+
+     constructor(private authService: AuthService, private router: Router) {}
+
+     onLogin() {
+       this.authService.login(this.credentials).subscribe({
+         next: (res) => {
+           this.authService.storeToken(res.token);
+           alert('Logged in successfully!');
+           this.router.navigate(['/']);
+         },
+         error: (err) => {
+           console.error('Login error:', err);
+           alert('Invalid credentials.');
+         }
+       });
+     }
+   }
+   ```
+
+3. **Log Out Handling**:  
+   - Add a Logout button in your Navbar that calls `authService.logout()` and navigates to `/login`.
+   - Example in `navbar.component.html`:
+     ```html
+     <li class="nav-item" *ngIf="authService.isLoggedIn()">
+       <a class="nav-link" (click)="logout()">Logout</a>
+     </li>
+     ```
+     ```typescript
+     // navbar.component.ts
+     import { AuthService } from '../../services/auth.service';
+     import { Router } from '@angular/router';
+
+     constructor(public authService: AuthService, private router: Router) {}
+
+     logout() {
+       this.authService.logout();
+       this.router.navigate(['/login']);
+     }
+     ```
+
+---
+
+### 6. Implement CRUD for Blog Posts
+
+Let’s wire up the components that display, create, edit, and delete posts.
+
+#### A. **Post List** (Reading All Posts)
+
+- **`post-list.component.ts`**:
+
+  ```typescript
+  import { Component, OnInit } from '@angular/core';
+  import { PostService, Post } from '../../services/post.service';
+
+  @Component({
+    selector: 'app-post-list',
+    templateUrl: './post-list.component.html'
+  })
+  export class PostListComponent implements OnInit {
+    posts: Post[] = [];
+
+    constructor(private postService: PostService) {}
+
+    ngOnInit(): void {
+      this.getPosts();
+    }
+
+    getPosts(): void {
+      this.postService.getPosts().subscribe({
+        next: (data) => {
+          this.posts = data;
+        },
+        error: (err) => {
+          console.error('Error fetching posts:', err);
+        }
+      });
+    }
+  }
+  ```
+
+- **`post-list.component.html`**:
+
+  ```html
+  <div class="container mt-4">
+    <div class="row">
+      <div class="col-12">
+        <h2>Blog Posts</h2>
+        <div class="row">
+          <div class="col-md-4" *ngFor="let post of posts">
+            <div class="card mb-4">
+              <div class="card-body">
+                <h5 class="card-title">{{ post.title }}</h5>
+                <p class="card-text">
+                  {{ post.content | slice:0:100 }}...
+                </p>
+                <a [routerLink]="['/post', post._id]" class="btn btn-primary">Read More</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  ```
+
+#### B. **Post Detail** (View Single Post)
+
+- **`post-detail.component.ts`**:
+  
+  ```typescript
+  import { Component, OnInit } from '@angular/core';
+  import { ActivatedRoute } from '@angular/router';
+  import { PostService, Post } from '../../services/post.service';
+
+  @Component({
+    selector: 'app-post-detail',
+    templateUrl: './post-detail.component.html'
+  })
+  export class PostDetailComponent implements OnInit {
+    post!: Post;
+
+    constructor(
+      private route: ActivatedRoute,
+      private postService: PostService
+    ) {}
+
+    ngOnInit(): void {
+      const id = this.route.snapshot.paramMap.get('id');
+      if (id) {
+        this.postService.getPost(id).subscribe({
+          next: (data) => {
+            this.post = data;
+          },
+          error: (err) => {
+            console.error('Error retrieving post:', err);
+          }
+        });
+      }
+    }
+  }
+  ```
+
+- **`post-detail.component.html`**:
+
+  ```html
+  <div class="container mt-4" *ngIf="post">
+    <div class="row">
+      <div class="col-12">
+        <h2>{{ post.title }}</h2>
+        <p>{{ post.content }}</p>
+        <div *ngIf="post.attachment">
+          <h5>Attachment</h5>
+          <!-- If it's an image, you can render an <img>. If it's a PDF, you can link to it, etc. -->
+          <img *ngIf="post.attachment.endsWith('.jpg') || post.attachment.endsWith('.png')" 
+               [src]="'/' + post.attachment" 
+               alt="Attachment" 
+               class="img-fluid" />
+          <a *ngIf="!post.attachment.endsWith('.jpg') && !post.attachment.endsWith('.png')"
+             [href]="'/' + post.attachment" target="_blank">Download File</a>
+        </div>
+        <div class="mt-3">
+          <a [routerLink]="['/edit', post._id]" class="btn btn-warning">Edit</a>
+          <button (click)="deletePost()" class="btn btn-danger">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  ```
+
+  ```typescript
+  // Add a delete method in the component if desired:
+  deletePost() {
+    if (!this.post._id) return;
+    this.postService.deletePost(this.post._id).subscribe({
+      next: () => {
+        alert('Post deleted!');
+        window.history.back();
+      },
+      error: (err) => {
+        console.error('Delete error:', err);
+      }
+    });
+  }
+  ```
+
+#### C. **Post Form** (Create and Edit)
+
+We’ll combine **create** and **edit** logic into a single form component that checks the route parameter. If an `id` is present, we’re editing an existing post.
+
+- **`post-form.component.ts`**:
+
+  ```typescript
+  import { Component, OnInit } from '@angular/core';
+  import { ActivatedRoute, Router } from '@angular/router';
+  import { PostService, Post } from '../../services/post.service';
+
+  @Component({
+    selector: 'app-post-form',
+    templateUrl: './post-form.component.html'
+  })
+  export class PostFormComponent implements OnInit {
+    post: Post = { title: '', content: '' };
+    isEditMode = false;
+    selectedFile?: File;
+
+    constructor(
+      private postService: PostService,
+      private route: ActivatedRoute,
+      private router: Router
+    ) {}
+
+    ngOnInit(): void {
+      const id = this.route.snapshot.paramMap.get('id');
+      if (id) {
+        this.isEditMode = true;
+        this.postService.getPost(id).subscribe({
+          next: (data) => {
+            this.post = data;
+          },
+          error: (err) => console.error(err)
+        });
+      }
+    }
+
+    onFileSelected(event: any) {
+      this.selectedFile = event.target.files[0];
+    }
+
+    onSubmit() {
+      const formData = new FormData();
+      formData.append('title', this.post.title);
+      formData.append('content', this.post.content);
+      if (this.selectedFile) {
+        formData.append('attachment', this.selectedFile);
+      }
+
+      if (this.isEditMode && this.post._id) {
+        this.postService.updatePost(this.post._id, formData).subscribe({
+          next: () => {
+            alert('Post updated!');
+            this.router.navigate(['/posts']);
+          },
+          error: (err) => console.error('Update error:', err)
+        });
+      } else {
+        this.postService.createPost(formData).subscribe({
+          next: () => {
+            alert('Post created!');
+            this.router.navigate(['/posts']);
+          },
+          error: (err) => console.error('Create error:', err)
+        });
+      }
+    }
+  }
+  ```
+
+- **`post-form.component.html`**:
+  
+  ```html
+  <div class="container mt-4">
+    <div class="row">
+      <div class="col-md-8 offset-md-2">
+        <h2 *ngIf="isEditMode">Edit Post</h2>
+        <h2 *ngIf="!isEditMode">Create Post</h2>
+        <form (ngSubmit)="onSubmit()" #postForm="ngForm">
+          <div class="mb-3">
+            <label for="title" class="form-label">Title</label>
+            <input 
+              type="text" 
+              id="title" 
+              class="form-control"
+              required
+              [(ngModel)]="post.title"
+              name="title"
+            />
+          </div>
+          <div class="mb-3">
+            <label for="content" class="form-label">Content</label>
+            <textarea
+              id="content"
+              class="form-control"
+              rows="5"
+              required
+              [(ngModel)]="post.content"
+              name="content"
+            ></textarea>
+          </div>
+          <div class="mb-3">
+            <label for="attachment" class="form-label">Attachment (optional)</label>
+            <input
+              type="file"
+              id="attachment"
+              class="form-control"
+              (change)="onFileSelected($event)"
+            />
+          </div>
+          <button class="btn btn-primary" type="submit">
+            {{ isEditMode ? 'Update' : 'Create' }} Post
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  ```
+
+---
+
+### 7. Protect Certain Routes (Optional Route Guards)
+
+If you want to **restrict** creation or editing to only authenticated users, you can:
+
+1. **Generate a guard**:
+   ```bash
+   ng generate guard guards/auth
+   ```
+2. **In `auth.guard.ts`**:
+   ```typescript
+   import { Injectable } from '@angular/core';
+   import { CanActivate, Router } from '@angular/router';
+   import { AuthService } from '../services/auth.service';
+
+   @Injectable({
+     providedIn: 'root',
+   })
+   export class AuthGuard implements CanActivate {
+     constructor(private authService: AuthService, private router: Router) {}
+
+     canActivate(): boolean {
+       if (!this.authService.isLoggedIn()) {
+         this.router.navigate(['/login']);
+         return false;
+       }
+       return true;
+     }
+   }
+   ```
+3. **Apply guard** to routes in `app-routing.module.ts`:
+   ```typescript
+   import { AuthGuard } from './guards/auth.guard';
+   ...
+   const routes: Routes = [
+     { path: '', component: HomeComponent },
+     { path: 'posts', component: PostListComponent },
+     { path: 'post/:id', component: PostDetailComponent },
+     // Only allow authenticated users to create or edit
+     { path: 'create', component: PostFormComponent, canActivate: [AuthGuard] },
+     { path: 'edit/:id', component: PostFormComponent, canActivate: [AuthGuard] },
+     ...
+   ];
+   ```
+Now only logged-in users can access `create` and `edit` routes.
+
+---
+
+### 8. Final UI/UX Touches
+
+1. **Display error/success messages** with Bootstrap alerts.
+2. **Use loading indicators** (spinners) when fetching data from the server.
+3. **Responsive Layout**: Ensure columns and cards adapt well to different screen sizes.
+4. **Pagination or infinite scroll** (if you have many posts).
+5. **Search or filter** functionality (optional).
+
+---
+
+### 9. Testing the Angular App Thoroughly
+
+1. **Local Setup**:
+   - Ensure your **Node/Express** app is running on port `3000`.
+   - Run Angular with:
+     ```bash
+     ng serve --proxy-config proxy.conf.json
+     ```
+   - Open [http://localhost:4200](http://localhost:4200) and navigate:
+     - **Home** (check basic layout).
+     - **Posts** (ensure the list of posts from the backend loads).
+     - **Create** (if logged in or no route guard).
+       - Test uploading an attachment.
+     - **Post Detail** (view the newly created post).
+     - **Delete** or **Edit** the post.
+   - **Register** a new user, then **login**. Use the dev tools or network tab to confirm the JWT is sent in requests (if you implemented it).
+2. **Console**:
+   - Monitor for errors in the browser console.
+   - Check the **Network** tab to verify correct requests are being made (especially for file uploads).
+3. **Refinements**:
+   - Tweak styling for forms, buttons, or alerts as necessary.
+   - Test edge cases (empty fields, large file uploads, invalid tokens, etc.).
+
+---
+
+## Summary of the Enhanced Frontend Flow
+
+1. **Angular Project & Basic Setup**: Created and configured with Bootstrap.  
+2. **Components**: Navbar, home, post list, post detail, post form, login, register, not found.  
+3. **Routing**: A clear structure with dedicated routes for reading, creating, editing, and authentication.  
+4. **Services**: 
+   - **PostService** handles CRUD with optional file uploads using `FormData`.  
+   - **AuthService** manages registration, login, logout, JWT storage, and “isLoggedIn” checks.  
+5. **Authentication**:
+   - Implemented `login` and `register` components, storing JWT in local storage.  
+   - Optional route guards to protect certain views.  
+6. **CRUD**:
+   - Post list displays all posts.  
+   - Post detail shows a single post plus delete/edit buttons (if needed).  
+   - Post form handles creation and editing.  
+7. **Testing**:
+   - Verified everything locally using the proxy to the Node/Express backend.  
+   - Confirmed file attachments, token-based auth, route guards, and UI elements all function as intended.
+
+With these **expanded steps**, your Angular frontend will be more **user-friendly**, **feature-complete**, and aligned with the **Node.js/Express** backend’s capabilities. 
+
+---
+
+### Next Steps & Deployment
+
+- Once everything works locally, you can choose to **deploy**:
+  - **Serve Angular from your Node server** (copy the dist folder to `public` or similar).  
+  - Or **host Angular separately** (e.g., AWS S3, Netlify, Vercel) and host Node on Heroku/AWS.  
+- For production builds, use:
+  ```bash
+  ng build --configuration production
+  ```
+  (or `--prod` in older versions of Angular) to generate optimized output.
+
+This covers the **detailed** Angular side to ensure a fully functional, user‐friendly blog application integrated with your backend’s features. 
+
+**Happy coding!** If you have any further questions or need clarification on any specific step, feel free to ask.
